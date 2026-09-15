@@ -1,0 +1,236 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  emailVerified Boolean   @default(false)
+  image         String?
+  sessions      Session[]
+  accounts      Account[]
+
+  role       String?
+  banned     Boolean?  @default(false)
+  banReason  String?
+  banExpires DateTime?
+
+  counters Counter[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  impersonatedBy String?
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+// _________________________________________________________ FIN DE BETTER AUTH
+
+model Team {
+  id   String @id
+  name String @unique
+
+  participants Participant[]
+
+  @@map("team")
+}
+
+model Competitor {
+  id       String   @id
+  country  String
+  lastName String
+  name     String
+  dni      String   @unique
+  born     DateTime
+  sex      String
+  phone    String   @unique
+
+  carnet String? @unique
+  blood  String?
+
+  email     String? @unique
+  alergy    String?
+  emergency String?
+
+  banned    Boolean @default(false)
+  banReason String?
+
+  participant Participant[]
+
+  @@map("competitor")
+}
+
+model Category {
+  id   String @id
+  name String @unique
+
+  competitions CategoriesInCompetition[]
+
+  @@map("category")
+}
+
+model CategoriesInCompetition {
+  id            Int    @id @default(autoincrement())
+  competitionId String
+  categoryId    String
+  day           Int
+  order         Int
+  description   String
+
+  category    Category    @relation(fields: [categoryId], references: [id])
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+
+  participants Participant[]
+
+  @@unique([categoryId, competitionId])
+  @@index([categoryId, competitionId])
+  @@map("categories_in_competition")
+}
+
+model Competition {
+  id                  String   @id
+  name                String   @unique
+  city                String
+  participantInterval Int // segundos
+  categoryInterval    Int // minutes
+  startTime           Int // hora de inicio por dia
+  startDate           DateTime
+  endDate             DateTime
+  status              Boolean  @default(false)
+  createdAt           DateTime @default(now())
+
+  categories   CategoriesInCompetition[]
+  participants Participant[]
+  counters     Counter[]
+
+  @@map("competition")
+}
+
+model Participant {
+  id            Int     @id @default(autoincrement())
+  competitorId  String
+  categoryId    Int
+  teamId        String?
+  competitionId String
+
+  order          Int?
+  dorsal         Int?
+  times          String[] @default([])
+  noFinish       String?
+  noFinishReason String?
+
+  category    CategoriesInCompetition @relation(fields: [categoryId], references: [id])
+  competitor  Competitor              @relation(fields: [competitorId], references: [id])
+  competition Competition             @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  team        Team?                   @relation(fields: [teamId], references: [id])
+
+  @@unique([competitorId, competitionId])
+  @@index([competitorId, competitionId])
+  @@map("participant")
+}
+
+model Counter {
+  id            Int    @id @default(autoincrement())
+  competitionId String
+  userId        String
+  alias         String
+  order         Int
+
+  user        User        @relation(fields: [userId], references: [id])
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, competitionId])
+  @@index([userId, competitionId])
+  @@map("counter")
+}
+
+//* SERVIDOR
+//? Competicion
+// Retirar: totalPerCategory - echo
+// Agregar: tiempos de partida entre participantes y tiempos entre categorias, hora de inicio por dia - echo
+
+//? Categorias:
+// Agregar a la relacion Many-to-Many, dia de partida, orden de partida y requisitos. - ech0
+// editar categorias a competicion - echo
+
+//? Participante:
+// Agregar numero de orden de partida y numero de dorsal, el dorsal es opcional, se agrega manualmente y al cerrar las inscripciones se asignan los dorsales faltantes automaticamente.- echo
+// agregar el numero de carnet UCI en la lista de competidores, - echo
+// agregar observacion: no se presento DNS, no termino DNF, descalificado DSQ. - echo
+// Generar reporte de salidas
+
+//? Resultados:
+// Corregir la tabla dinamica, - echo
+// mostrar solo el primer tiempo y la diferencia con el primer lugar en los restantes - echo
+
+//? Competidores
+// Formulario abierto para registro de competidores
+// Agregar Genero - echo
+// Agregar beto - echo 
+
+//* WEBSOCKET
+// Manejar varios competidores a la vez - echo
+
+//! IDEAS A FUTURO
+// soporte a multiples nacionalidades
+// Multiples tiempos de participantes por competencia
+// pagos por la web
+
+// TAREA
+// agregar la variable message para hacer el codigo mas corto
+// validar los errores con zod antes de enviarlos, unicos en array por ejemploi
