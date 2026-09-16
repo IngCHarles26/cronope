@@ -1,80 +1,280 @@
 # Bike Chrono Backend
 
-Backend de Bike Chrono, una plataforma para administrar competencias de ciclismo y registrar tiempos de participantes en distintos puntos de una ruta. Este servicio concentra la lógica de negocio, la persistencia, la autenticación y la comunicación en tiempo real con los usuarios que operan los puntos de cronometraje.
+Bike Chrono's backend is a platform for managing cycling competitions and recording participant times at different points along a route. This service centralizes business logic, persistence, authentication, and real-time communication with timing-point operators.
 
-## Valor técnico
+## Technical value
 
-- API modular construida con NestJS y TypeScript.
-- Persistencia relacional con PostgreSQL y Prisma ORM.
+- Modular API built with NestJS and TypeScript.
+- Relational persistence with PostgreSQL and Prisma ORM.
+- Session-based authentication with Better Auth and Prisma integration.
+- Separate roles and permissions for administrators and timing operators (`counter`).
+- Real-time time recording through Socket.IO and WebSockets.
+- Declarative payload validation with Zod schemas shared with the frontend.
+- Consistent HTTP responses and errors for easier client integration.
+- Architecture prepared to manage competitions, categories, participants, teams, operators, and results.
 
-## Responsabilidad del servicio
+## Service responsibilities
 
-El backend permite:
+The backend can:
 
-...
+- Create, view, edit, activate, and delete competitions.
+- Configure competition categories, starting order, and participation day.
+- Register competitors with personal, athletic, and emergency-contact data.
+- Assign competitors and teams to competitions.
+- Create categories and teams, and edit teams.
+- Create operator users and assign them to competitions as timing points.
+- Retrieve the competition of the day and competition results.
+- Add times to participants.
+- Coordinate multiple connected timing points.
+- Report operator connection status and current times in real time.
 
-## Stack tecnológico
+## Technology stack
 
-| Área | Tecnología |
-| ---- | ---------- |
+| Area           | Technology                                 |
+| -------------- | ------------------------------------------ |
+| Runtime        | Node.js                                    |
+| Language       | TypeScript                                 |
+| Framework      | NestJS 11                                  |
+| HTTP API       | Express through `@nestjs/platform-express` |
+| Real time      | Socket.IO through NestJS WebSockets        |
+| Database       | PostgreSQL 14+                             |
+| ORM            | Prisma 7                                   |
+| Authentication | Better Auth + Prisma adapter               |
+| Validation     | Zod 4 and `ZodValidationPipe`              |
+| Testing        | Jest, Supertest, and `@nestjs/testing`     |
+| Monorepo       | pnpm workspaces + Turborepo                |
 
-## Arquitectura
+## Architecture
 
-El servidor está organizado por módulos de dominio:
+The server is organized into domain modules:
 
-...
+```text
+apps/server/
+├── common/                 # Global HTTP pipe, interceptor, and filter
+├── prisma/                 # Prisma schema and migrations
+├── src/
+│   ├── competition/        # Competitions, categories, participants, and results
+│   ├── competitor/         # Competitor creation and editing
+│   ├── time/               # Real-time timing gateway
+│   ├── users/              # Operator user creation
+│   ├── others/             # Categories, teams, and seed data
+│   ├── lib/auth.ts         # Better Auth configuration
+│   └── prisma.service.ts   # Shared Prisma client
+```
 
-## API HTTP
+The application starts with the global `/api` prefix. Successful HTTP responses use this shape:
 
-Todas las rutas HTTP de este apartado se sirven bajo `/api`.
+```json
+{
+  "success": true,
+  "statusCode": 200,
+  "data": {},
+  "message": "..."
+}
+```
 
-...
+Errors follow the same contract with `success: false`, an HTTP status code, `data: null`, and a client-readable message.
 
-## Cronometraje en tiempo real
+## HTTP API
 
-El gateway Socket.IO usa el namespace `competition-time`.
+All routes in this section are served under `/api`.
 
-...
+### Competitions
 
-## Autenticación y autorización
+| Method   | Route                                              | Purpose                              |
+| -------- | -------------------------------------------------- | ------------------------------------ |
+| `POST`   | `/competition`                                     | Create a competition                 |
+| `GET`    | `/competition`                                     | List competitions                    |
+| `GET`    | `/competition/:id`                                 | Get a competition                    |
+| `GET`    | `/competition/today`                               | Get the competition of the day       |
+| `GET`    | `/competition/results/:id`                         | Get results                          |
+| `PATCH`  | `/competition/:id`                                 | Edit competition data                |
+| `PATCH`  | `/competition/toggle/:id`                          | Activate or deactivate a competition |
+| `PATCH`  | `/competition/update-categories/:id`               | Update categories                    |
+| `PATCH`  | `/competition/update-participants/:id`             | Update participants                  |
+| `PATCH`  | `/competition/update-counters/:id`                 | Assign or update operators           |
+| `PATCH`  | `/competition/add-participant-time/:participantId` | Save a participant time              |
+| `DELETE` | `/competition/:id`                                 | Delete a competition                 |
 
-Better Auth está configurado con:
+### Competitors
 
-...
+| Method  | Route                        | Purpose                       |
+| ------- | ---------------------------- | ----------------------------- |
+| `POST`  | `/competitor`                | Create a competitor           |
+| `GET`   | `/competitor`                | List competitors              |
+| `PATCH` | `/competitor/:id`            | Edit a competitor             |
+| `PATCH` | `/competitor/toggle-ban/:id` | Block or unblock a competitor |
 
-## Modelo de datos
+The competitor model includes name, surname, document, birth date, sex, country, phone, license, blood type, email, allergies, emergency contact, and blocked status.
 
-El esquema Prisma incluye las siguientes entidades principales:
+### Users, categories, and teams
 
-...
+| Method  | Route                | Purpose                   |
+| ------- | -------------------- | ------------------------- |
+| `POST`  | `/users/new-user`    | Create an operator user   |
+| `POST`  | `/others/categories` | Create categories         |
+| `GET`   | `/others/categories` | List categories           |
+| `POST`  | `/others/teams`      | Create teams              |
+| `GET`   | `/others/teams`      | List teams                |
+| `PATCH` | `/others/team/:id`   | Edit a team               |
+| `GET`   | `/others/seed`       | Run development seed data |
 
-## Validación y contratos compartidos
+Better Auth is integrated through `AuthModule`; its session and access routes are under the `/api` prefix according to the Better Auth configuration.
 
-Los payloads de competencias, competidores, usuarios, categorías y equipos se validan con esquemas Zod importados desde el paquete interno `@cronope/schemas`. Esto permite compartir tipos y reglas entre `apps/server` y `apps/client`.
+## Real-time timing
 
-...
+The Socket.IO gateway uses the `competition-time` namespace.
 
-## Requisitos
+To connect, the client must send the following handshake data:
 
-- Node.js 20 o superior.
-- pnpm 10 o superior.
+```ts
+io("http://localhost:3000/competition-time", {
+  auth: {
+    token: "SESSION_TOKEN",
+    competitionId: "COMPETITION_ID",
+  },
+});
+```
 
-## Instalación y ejecución local
+The connection is accepted only when:
 
-Desde la raíz del monorepo:
+1. The token belongs to an existing session.
+2. The user is assigned as an operator for that competition.
 
-...
+Once connected, the gateway:
 
-## Calidad y mantenibilidad
+- Identifies the timing-point order and alias.
+- Publishes operator connection status.
+- Synchronizes participants that have already been processed.
+- Shares a participant's current times among connected points.
+- Allows the current time to be reset or cleared before persistence.
 
-- TypeScript estricto y módulos de NestJS separados por responsabilidad.
-- Servicios desacoplados de los controladores para concentrar la lógica de negocio.
+Gateway event names are shared from `@cronope/schemas`, avoiding duplicated contracts between frontend and backend.
 
-## Estado actual y siguientes mejoras
+## Authentication and authorization
 
-El backend ya cuenta con la base funcional para administrar competencias, participantes y puntos de registro de tiempos. Entre las líneas de evolución identificadas en el proyecto están:
+Better Auth is configured with:
 
-...
+- Email and password sign-in.
+- Sessions persisted in PostgreSQL.
+- Bearer token support.
+- Administration and access-control plugin.
+- Session-cookie cache configured for six minutes.
+
+The domain roles are:
+
+| Role      | Main capabilities                                                    |
+| --------- | -------------------------------------------------------------------- |
+| `admin`   | Manage users, categories, competitors, and the competition lifecycle |
+| `counter` | View categories, competitors, and competitions, and record times     |
+
+The WebSocket connection also checks that the operator is assigned to the requested competition. Authentication routes and final deployment restrictions should be reviewed with the environment configuration before publishing the service.
+
+## Data model
+
+The Prisma schema includes these main entities:
+
+- `User`, `Session`, `Account`, and `Verification`: Better Auth identity and sessions.
+- `Competition`: name, city, dates, status, start intervals, and start time.
+- `Category`: category catalog.
+- `CategoriesInCompetition`: competition-category relation with day, order, and description.
+- `Competitor`: cyclist personal and athletic information.
+- `Participant`: competitor registration in a competition, category, team, bib, order, and finish status.
+- `Team`: teams associated with participants.
+- `Counter`: operator assignments to competitions, including point alias and order.
+
+The schema includes relations, unique keys, and indexes to prevent duplicates in documents, phones, emails, registrations, and operator assignments.
+
+## Validation and shared contracts
+
+Competition, competitor, user, category, and team payloads are validated with Zod schemas imported from the internal `@cronope/schemas` package. This lets `apps/server` and `apps/client` share types and rules.
+
+The application uses:
+
+- `ZodValidationPipe` to reject invalid input with readable field errors.
+- `TransformInterceptor` to normalize successful responses.
+- `AllExceptionsFilter` to normalize HTTP exceptions and unexpected errors.
+- `ConfigModule` to load variables from `.env`.
+- CORS configured for local monorepo clients.
+
+## Requirements
+
+- Node.js 20 or newer.
+- pnpm 10 or newer.
+- PostgreSQL 14 or newer.
+- Environment variables configured in `apps/server/.env`.
+
+Minimum expected variables:
+
+```env
+DATABASE_URL="postgresql://user:password@localhost:5432/bike_chrono"
+```
+
+Better Auth may also require secret and trusted-URL variables defined by the runtime environment. Real secrets must not be committed to the repository.
+
+## Local installation and execution
+
+From the monorepo root:
+
+```bash
+pnpm install
+```
+
+After configuring `apps/server/.env`, generate the client and apply migrations:
+
+```bash
+pnpm --filter server exec prisma generate
+pnpm --filter server exec prisma migrate dev
+```
+
+Available commands in `apps/server`:
+
+```bash
+# Development
+pnpm --filter server dev
+
+# Build
+pnpm --filter server build
+
+# Production
+pnpm --filter server start:prod
+
+# Unit tests
+pnpm --filter server test
+
+# Coverage
+pnpm --filter server test:cov
+
+# End-to-end tests
+pnpm --filter server test:e2e
+
+# Lint
+pnpm --filter server lint
+```
+
+The server listens on port `3000` by default. This can be changed with `PORT`.
+
+## Quality and maintainability
+
+- Strict TypeScript and NestJS modules separated by responsibility.
+- Services decoupled from controllers to centralize business logic.
+- Reusable schemas and types in a shared monorepo package.
+- Prisma as a typed data-access layer.
+- Jest and Supertest available for unit and end-to-end tests.
+- ESLint and Prettier integrated into service scripts.
+- Real-time communication isolated in a dedicated timing-domain gateway.
+
+## Current status and future improvements
+
+The backend has the functional foundation for managing competitions, participants, and timing points. Identified areas of evolution include:
+
+- Generate start-list and summary reports in PDF.
+- Allow public competitor registration.
+- Complete the results flow with multiple times per participant.
+- Add support for payments and multiple nationalities.
+- Expand test coverage and OpenAPI documentation.
+
+These features are planned evolution and are not currently available in production.
 
 # Bike Chrono Backend
 
@@ -138,7 +338,7 @@ apps/server/
 │   ├── others/             # Categorías, equipos y seed
 │   ├── lib/auth.ts         # Configuración de Better Auth
 │   └── prisma.service.ts   # Cliente Prisma compartido
-└── docker-compose.yml      # PostgreSQL local para desarrollo
+└── prisma.config.ts        # Configuración de Prisma
 ```
 
 La aplicación se inicia con el prefijo global `/api`. Las respuestas HTTP exitosas se normalizan con la siguiente forma:
@@ -280,7 +480,7 @@ La aplicación utiliza:
 
 - Node.js 20 o superior.
 - pnpm 10 o superior.
-- PostgreSQL 14 o superior, local o mediante Docker.
+- PostgreSQL 14 o superior.
 - Variables de entorno configuradas en `apps/server/.env`.
 
 Variables mínimas esperadas:
@@ -297,13 +497,6 @@ Desde la raíz del monorepo:
 
 ```bash
 pnpm install
-```
-
-Para levantar PostgreSQL con la configuración incluida:
-
-```bash
-cd apps/server
-docker compose up -d db
 ```
 
 Después de configurar `apps/server/.env`, generar el cliente y aplicar las migraciones:

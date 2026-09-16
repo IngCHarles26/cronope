@@ -1,5 +1,239 @@
 # Bike Chrono
 
+Bike Chrono is a web platform for managing cycling competitions and recording participant times at different points along a route. The repository contains a frontend application, a backend API, and a shared package of schemas and types.
+
+## What it solves
+
+The system covers the operational flow of a competition:
+
+1. An administrator creates the competition and configures its dates, city, categories, and start intervals.
+2. Competitors, teams, and participants are registered.
+3. Operator users are assigned to timing points.
+4. Operators record times from a specialized interface.
+5. The system synchronizes timing-point status and current times through Socket.IO.
+6. The dashboard displays results and manages the competition lifecycle.
+
+## Main capabilities
+
+- Manage competitions, categories, participants, and teams.
+- Create, edit, and block competitors.
+- Create operator users.
+- Access roles: `admin` and `counter`.
+- Protected administrative dashboard.
+- Timing view for assigned operators.
+- Time recording through the API and real-time synchronization.
+- Results and same-day competition lookup.
+- Shared frontend and backend validation through Zod.
+- Relational persistence with PostgreSQL.
+
+## Monorepo architecture
+
+```text
+bike-chrono/
+├── apps/
+│   ├── client/          # React SPA for administration and timing
+│   └── server/          # NestJS API, authentication, Prisma, and WebSockets
+├── packages/
+│   └── schemas/         # Shared types, Zod schemas, and contracts
+├── funcionalidad.md     # Reference functional specification
+├── package.json         # Workspace scripts and configuration
+├── pnpm-workspace.yaml  # Apps and packages definition
+└── turbo.json           # Turborepo tasks and dependencies
+```
+
+### Client application
+
+Built with React, TypeScript, and Vite. It manages navigation, sessions, forms, remote state, and the administrator and operator experience.
+
+- Administrative dashboard: `/panel`.
+- User, extra, and competition management for `admin`.
+- Timing for `counter`: `/timer`.
+- Authentication and authorization through React Router guards.
+- React Query for API queries and mutations.
+- Socket.IO Client for real-time communication.
+
+Specific documentation: [apps/client/README.md](apps/client/README.md).
+
+### Server application
+
+Built with NestJS and TypeScript. It exposes the API under the `/api` prefix, centralizes business logic, persists data with Prisma, and coordinates real-time timing.
+
+- REST API for competitions, competitors, users, categories, and teams.
+- Better Auth for sessions, email/password authentication, and roles.
+- PostgreSQL as the database.
+- Prisma as the ORM and typed client.
+- Socket.IO through the `competition-time` namespace.
+- Uniform HTTP response and error contracts.
+
+Specific documentation: [apps/server/README.md](apps/server/README.md).
+
+### Shared package
+
+`packages/schemas` is published inside the workspace as `@cronope/schemas`. It contains:
+
+- Zod schemas for input validation.
+- Domain types and API responses.
+- Types related to competitions, participants, competitors, users, and timing.
+- Constants and events shared by the client and server.
+
+Example:
+
+```ts
+import { competitionSchema, type APIResponse } from "@cronope/schemas";
+```
+
+HTTP responses follow the `APIResponse<T>` contract:
+
+```json
+{
+  "success": true,
+  "statusCode": 200,
+  "data": {},
+  "message": "..."
+}
+```
+
+The `data` property contains the typed result of each operation. Errors keep the same structure with `success: false` and `data: null`.
+
+## Data flow
+
+```mermaid
+flowchart LR
+    Admin[Administrator] --> Client[React Client]
+    Counter[Timing Operator] --> Client
+    Client -->|HTTP /api| Server[NestJS Server]
+    Client <-->|Socket.IO competition-time| Server
+    Server --> Prisma[Prisma ORM]
+    Prisma --> Postgres[(PostgreSQL)]
+    Client -.-> Schemas[@cronope/schemas]
+    Server -.-> Schemas
+```
+
+The client uses HTTP for CRUD operations and queries. The Socket.IO gateway synchronizes operational timing state between users connected to the same competition.
+
+## Technology stack
+
+| Layer               | Technologies                                  |
+| ------------------- | --------------------------------------------- |
+| Frontend            | React 19, TypeScript, Vite 8                  |
+| Navigation          | React Router                                  |
+| Remote data         | TanStack React Query, Axios                   |
+| Forms               | React Hook Form, Zod                          |
+| State and real time | Zustand, Socket.IO Client                     |
+| UI                  | Tailwind CSS 4, Base UI, shadcn, Lucide React |
+| Backend             | NestJS 11, TypeScript, Express                |
+| Authentication      | Better Auth                                   |
+| Persistence         | PostgreSQL, Prisma 7                          |
+| Contracts           | Internal `@cronope/schemas` package           |
+| Workspace           | pnpm 10, pnpm workspaces, Turborepo           |
+
+## Requirements
+
+- Node.js 20 or newer.
+- pnpm 10 or newer.
+- An accessible PostgreSQL instance for the backend.
+
+## Installation
+
+From the repository root:
+
+```bash
+pnpm install
+```
+
+Configure the server variables in `apps/server/.env`. At minimum, the backend needs a PostgreSQL connection URL:
+
+```env
+DATABASE_URL="postgresql://user:password@localhost:5432/bike_chrono"
+```
+
+Generate the Prisma client and apply migrations:
+
+```bash
+pnpm --filter server exec prisma generate
+pnpm --filter server exec prisma migrate dev
+```
+
+For the frontend to consume the local backend, configure `apps/client/.env`:
+
+```env
+VITE_SERVER=http://localhost:3000
+```
+
+## Development
+
+To run the frontend and backend together from the root:
+
+```bash
+pnpm dev
+```
+
+Typical local services:
+
+- Frontend: `http://localhost:5173`.
+- Backend: `http://localhost:3000`.
+- API: `http://localhost:3000/api`.
+- Authentication: `http://localhost:3000/api/auth`.
+
+They can also be run separately:
+
+```bash
+pnpm --filter client dev
+pnpm --filter server dev
+```
+
+The Turborepo development process includes the shared `@cronope/schemas` package so its compiled types are available while the applications run.
+
+## Main commands
+
+```bash
+# Install dependencies
+pnpm install
+
+# Run the complete environment
+pnpm dev
+
+# Build packages and applications
+pnpm turbo build
+
+# Check the client
+pnpm --filter client lint
+pnpm --filter client build
+
+# Check the server
+pnpm --filter server lint
+pnpm --filter server build
+pnpm --filter server test
+
+# Build shared contracts
+pnpm --filter @cronope/schemas build
+```
+
+## Product roles
+
+| Role      | Main experience                                                                                                   |
+| --------- | ----------------------------------------------------------------------------------------------------------------- |
+| `admin`   | Manages users, competitors, categories, teams, and competitions. Configures participants, operators, and results. |
+| `counter` | Accesses the assigned competition and records times from timing points.                                           |
+
+Frontend routes and backend permissions use these same roles.
+
+## Project status
+
+The repository includes the main competition-management and time-recording flows. The public `live` routes are prepared in the client, but their screens are still evolving. Planned improvements include PDF report generation, public competitor registration, broader test coverage, and OpenAPI documentation.
+
+## Related documentation
+
+- [Frontend documentation](apps/client/README.md)
+- [Backend documentation](apps/server/README.md)
+- [Functional specification](funcionalidad.md)
+
+## License
+
+Private project with no public license declared.
+
+# Bike Chrono
+
 Bike Chrono es una plataforma web para administrar competencias de ciclismo y registrar los tiempos de sus participantes en distintos puntos de una ruta. El repositorio contiene una aplicación frontend, una API backend y un paquete compartido de esquemas y tipos.
 
 ## Qué resuelve
@@ -131,7 +365,6 @@ El cliente utiliza HTTP para operaciones CRUD y consultas. El gateway Socket.IO 
 
 - Node.js 20 o superior.
 - pnpm 10 o superior.
-- Docker y Docker Compose, para ejecutar PostgreSQL localmente.
 - Una instancia de PostgreSQL accesible para el backend.
 
 ## Instalación
@@ -146,13 +379,6 @@ Configura las variables del servidor en `apps/server/.env`. Como mínimo, el bac
 
 ```env
 DATABASE_URL="postgresql://usuario:password@localhost:5432/bike_chrono"
-```
-
-Levanta la base de datos local incluida en el proyecto:
-
-```bash
-cd apps/server
-docker compose up -d db
 ```
 
 Genera el cliente Prisma y aplica las migraciones:
@@ -239,4 +465,5 @@ El repositorio cuenta con los flujos principales para la administración de comp
 ## Licencia
 
 Proyecto privado y sin licencia pública declarada.
+
 # cronope

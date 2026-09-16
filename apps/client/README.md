@@ -1,5 +1,223 @@
 # Bike Chrono Frontend
 
+Bike Chrono's web application. This client lets administrators configure competitions and operators record participant times during a cycling race. It consumes the server API over HTTP and uses Socket.IO to synchronize timing in real time.
+
+## Technical value
+
+- Single-page application built with React 19, TypeScript, and Vite.
+- Declarative navigation with React Router.
+- Session- and role-based route protection (`admin` and `counter`).
+- Remote data management with TanStack React Query.
+- Typed Axios HTTP client with shared contracts from `@cronope/schemas`.
+- Forms with React Hook Form and Zod validation.
+- Local state and real-time connection state with Zustand.
+- Browser-based Better Auth integration.
+- Multi-operator timing with `socket.io-client`.
+- Visual system based on Tailwind CSS 4, reusable components, and `lucide-react`.
+
+## Client responsibilities
+
+The frontend provides interfaces to:
+
+- Sign in and sign out.
+- Check the current session and redirect users according to authentication state.
+- Display a protected administrative dashboard.
+- Create operator users.
+- Create, edit, and block competitors.
+- Create categories and teams, and edit teams.
+- Create and manage competitions.
+- Activate or deactivate competitions.
+- Configure competition categories, participants, starting order, and operators.
+- View competition results.
+- Retrieve the competition assigned for the day.
+- Record times from the operator view.
+- Display timing-point connection status and synchronize current participant times.
+
+## Technology stack
+
+| Area                  | Technology                             |
+| --------------------- | -------------------------------------- |
+| UI                    | React 19                               |
+| Language              | TypeScript                             |
+| Build and development | Vite 8                                 |
+| Routing               | React Router 8                         |
+| Remote data           | TanStack React Query 5                 |
+| HTTP client           | Axios                                  |
+| Authentication        | Better Auth React                      |
+| Forms                 | React Hook Form + Zod                  |
+| State                 | Zustand 5                              |
+| Real time             | Socket.IO Client 4                     |
+| Styling               | Tailwind CSS 4 + `tw-animate-css`      |
+| Components            | Base UI, shadcn, and custom components |
+| Icons                 | Lucide React                           |
+| Shared types          | Internal `@cronope/schemas` package    |
+
+## Architecture
+
+```text
+apps/client/
+├── public/                    # Static assets
+├── src/
+│   ├── components/
+│   │   ├── competitions/      # Competition management, editing, and results
+│   │   ├── extras/            # Categories, teams, and competitors
+│   │   ├── login/             # Login, sessions, and route guards
+│   │   ├── timer/             # Timing and Socket.IO communication
+│   │   ├── users/             # Operator users
+│   │   ├── sidebar/           # Dashboard navigation
+│   │   ├── pages/             # Main pages and 404
+│   │   ├── ui/                # Reusable interface primitives
+│   │   └── app/               # Loading, toasts, inputs, and common actions
+│   ├── layouts/               # Administrative dashboard layout
+│   ├── lib/
+│   │   ├── api.ts             # Axios client and API routes
+│   │   ├── auth-client.ts     # Better Auth client
+│   │   └── store/             # Navigation and Socket.IO stores
+│   ├── App.tsx                # Route tree and guards
+│   ├── main.tsx               # Global providers and React mount
+│   └── index.css              # Visual tokens and Tailwind styles
+└── vite.config.ts
+```
+
+## Application flows and routes
+
+| Route                  | Access           | Functionality                        |
+| ---------------------- | ---------------- | ------------------------------------ |
+| `/`                    | Public           | Home page                            |
+| `/login`               | Public           | Sign in                              |
+| `/panel`               | Session required | Administrative dashboard             |
+| `/panel/users`         | `admin` only     | User creation                        |
+| `/panel/extras`        | `admin` only     | Categories, teams, and competitors   |
+| `/panel/competitions`  | `admin` only     | Full competition management          |
+| `/timer`               | `counter` only   | Timing operations                    |
+| `/live`                | Public           | Planned public live information area |
+| `/live/:competitionId` | Public           | Planned public competition route     |
+
+Protected routes display a loading state while the session is checked. Unauthenticated visitors return to `/login`, while users without the required role return to the dashboard.
+
+## Administrative dashboard
+
+The dashboard uses a layout with side navigation and organizes administrative tasks by domain:
+
+- **Users:** operator creation and account-related actions.
+- **Extras:** category, team, and competitor maintenance.
+- **Competitions:** actions to edit information, toggle status, manage categories, participants, and operators, reorder participants, review results, and delete competitions.
+
+Forms are decoupled into reusable components and connected to React Query hooks specific to each module.
+
+## Timing view
+
+The `/timer` route targets the `counter` role and retrieves the competition assigned for the day. The interface displays loading or no-competition states and, when an assignment exists, opens the time-recording flow.
+
+The client maintains a Socket.IO store and hooks to subscribe to and clean up event listeners. This makes it possible to:
+
+- Connect an operator to their session and competition.
+- See which timing points are connected.
+- Share already processed participants.
+- Share a participant's current times between operators.
+- Reset the current time before confirming the record.
+
+HTTP communication uses typed responses with the shared `APIResponse<T>` shape.
+
+## Authentication and access control
+
+The client integrates Better Auth with session support and the administrative plugin. React Query retrieves the session, which is used at three levels:
+
+1. `AuthPass` keeps the login screen from appearing for users with an active session.
+2. `AuthGuard` protects the dashboard and timing view.
+3. `RoleGuard` restricts administrative routes to `admin` and the timing view to `counter`.
+
+Roles and types are imported from `@cronope/schemas`, so the interface and backend share the same domain contract.
+
+## API integration
+
+The HTTP client is configured in `src/lib/api.ts` with:
+
+- A base URL built from `VITE_SERVER`.
+- Local fallback `http://localhost:3000`.
+- `/api` prefix.
+- `withCredentials: true` for cookie-based sessions.
+- Typed `GET`, `POST`, `PATCH`, and `DELETE` methods.
+
+Local configuration example:
+
+```env
+VITE_SERVER=http://localhost:3000
+```
+
+The Better Auth client currently uses `http://localhost:3000/api/auth`. In other environments, this URL must match the deployed authentication server.
+
+## Requirements
+
+- Node.js 20 or newer.
+- pnpm 10 or newer.
+- Bike Chrono backend available at the server specified by `VITE_SERVER`.
+- Dependencies installed from the monorepo root.
+
+## Local installation and execution
+
+From the monorepo root:
+
+```bash
+pnpm install
+```
+
+To run only the client:
+
+```bash
+pnpm --filter client dev
+```
+
+Vite serves the application at `http://localhost:5173` by default.
+
+Available scripts in `apps/client`:
+
+```bash
+# Development with HMR
+pnpm --filter client dev
+
+# TypeScript and production build
+pnpm --filter client build
+
+# Lint
+pnpm --filter client lint
+
+# Preview the build
+pnpm --filter client preview
+```
+
+To run the frontend and backend through the monorepo script:
+
+```bash
+pnpm dev
+```
+
+## Quality and maintainability
+
+- Separation by functional domains and reusable UI components.
+- Hooks specific to each module's queries and mutations.
+- Authentication and authorization guards in the router.
+- Shared contracts and types from `@cronope/schemas`.
+- React Query for caching, synchronizing, and updating remote data.
+- Socket.IO listener cleanup when components unmount.
+- ESLint and TypeScript integrated into the build flow.
+- React Compiler enabled in the project configuration.
+
+## Current status and evolution
+
+The application includes the main administrative dashboard and time-recording flows. The `live` routes are prepared in the router, but their public screens are still placeholders. Planned improvements include:
+
+- Complete the public live view for each competition.
+- Improve public results presentation.
+- Add automated component and user-flow tests.
+- Configure the authentication URL externally for non-local deployments.
+
+## Relationship with the backend
+
+This README documents only `apps/client`. The API, Prisma model, server authentication, and Socket.IO gateway are documented in [apps/server/README.md](../server/README.md).
+
+# Bike Chrono Frontend
+
 Aplicación web de Bike Chrono. Este cliente permite a administradores configurar competencias y a operadores registrar tiempos de participantes durante una carrera de ciclismo. Consume la API del servidor mediante HTTP y utiliza Socket.IO para sincronizar el cronometraje en tiempo real.
 
 ## Valor técnico
